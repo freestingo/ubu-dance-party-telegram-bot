@@ -10,9 +10,10 @@ compatibility_date = "2023-06-21"
 
 # Bind a KV Namespace. Use KV as persistent storage for small key-value pairs.
 # Docs: https://developers.cloudflare.com/workers/runtime-apis/kv
-[[kv_namespaces]]
-binding = "RYM_USERS"
-id = "44e352a421ab4a57a1e63ff96ec035a1"
+kv_namespaces = [
+   { binding = "RYM_USERS", id = "44e352a421ab4a57a1e63ff96ec035a1" }
+ , { binding = "SCARUFFI_MENTIONS", id = "2efd039eea3b4ce68a5c6bcabcd2e2fe" }
+]
 
 # Bind an R2 Bucket. Use R2 to store arbitrarily large blobs of data, such as files.
 # Docs: https://developers.cloudflare.com/r2/api/workers/workers-api-usage/

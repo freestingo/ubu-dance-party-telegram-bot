@@ -11,7 +11,9 @@
 import { ChatMemberResponse } from "../models/chatMemberResponse"
 import { Env } from "../models/env"
 import { Message } from "../models/message"
+import { ScaruffiMention } from "../models/scaruffiMention";
 import { User } from "../models/user"
+import { scaruffiSynonyms } from "./constants";
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -62,6 +64,20 @@ export default {
       const data = await fetch(url).then(resp => resp.json())
     }
 
+    async function punishScaruffiMention(message: Message) {
+      // const chatId = message.chat.id
+      const userId = message.from.id.toString()
+      // const username = message.from.username
+      const previousScaruffiMentions = await env.SCARUFFI_MENTIONS.get(userId, { type: 'json' }) as ScaruffiMention[] | null
+      const updatedScaruffiMentions = (previousScaruffiMentions ?? []).concat([{
+        userId,
+        synonym: scaruffiSynonyms.find(s => message.text.includes(s))!,
+        timestamp: new Date().toJSON()
+      }])
+      await env.SCARUFFI_MENTIONS.put(userId, JSON.stringify(updatedScaruffiMentions))
+      console.log('updatedScaruffiMentions', updatedScaruffiMentions)
+    }
+
     async function echo(message: Message) {
       const chatId = message.chat.id
       const content = message.text
@@ -81,6 +97,9 @@ export default {
         } else if (message.entities && message.entities.find(e => e.type === 'mention') && message.entities.find(e => e.type === 'url') && message.text.includes('insert-profile-url')) {
           console.log('called insert-profile-url command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
           await insertProfileUrl(message)
+        } else if (message.text && scaruffiSynonyms.some(s => message.text.includes(s))) {
+          console.log('called punishScaruffiMention command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
+          await punishScaruffiMention(message)
         } else if (message.text === 'echo') {
           console.log('called echo command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
           await echo(message)

@@ -1,5 +1,6 @@
 export interface Env {
   API_KEY: string;
+  RYM_USERS: KVNamespace;
 
 	// Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
 	// MY_KV_NAMESPACE: KVNamespace;

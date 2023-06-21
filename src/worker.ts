@@ -8,25 +8,40 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+import { ChatMemberResponse } from "../models/chatMemberResponse"
 import { Env } from "../models/env"
-import { RymUser } from "../models/rymUser"
+import { Message } from "../models/message"
+import { User } from "../models/user"
 
-function renderRymList(rymUsers: RymUser[]): string {
-  return rymUsers
-    .map(({ username, profileUrl }) => `${username}\n${profileUrl}`)
+async function listRymUsers(message: Message, env: Env) {
+  const chatId = message.chat.id
+  const rymUserIds = await env.RYM_USERS
+    .list()
+    .then(list => list.keys.map(key => key.name))
+  const chatMembers: User[] = await Promise.all(rymUserIds
+    .map(userId => `https://api.telegram.org/bot${env.API_KEY}/getChatMember?chat_id=${chatId}&user_id=${userId}`)
+    .map(url => fetch(url)
+      .then(resp => resp.json())
+      .then(resp => (resp as ChatMemberResponse).result.user)))
+  const rymUsers = await Promise.all(rymUserIds.map(userId => env.RYM_USERS
+    .get(`${userId}`)
+    .then(profileUrl => ({ username: chatMembers.find(cm => `${cm.id}` === userId)?.username ?? 'unknown username', profileUrl }))))
+  const renderedRymUsersList = rymUsers
+    .map(rymUser => `${rymUser.username}\n${rymUser.profileUrl}`)
     .join('\n\n')
+  const text = `Profili RYM salvati:\n${renderedRymUsersList}`
+  const url = `https://api.telegram.org/bot${env.API_KEY}/sendMessage?chat_id=${chatId}&text=${text}`
+  const data = await fetch(url).then(resp => resp.json())
 }
 
 async function handleRequest(request: Request, env: Env) {
   if (request.method === "POST") {
     const payload: any = await request.json()
     if ('message' in payload) {
-      const username = payload.message.from.username
-      const userId = payload.message.from.id
-      const chatId = payload.message.chat.id
-      const text = `${username} (${userId}) just sent me: '${payload.message.text}'`;
-      const url = `https://api.telegram.org/bot${env.API_KEY}/sendMessage?chat_id=${chatId}&text=${text}`
-      const data = await fetch(url).then(resp => resp.json())
+      const message: Message = payload.message
+      if (message.text === 'rym') {
+        await listRymUsers(message, env)
+      }
     }
   }
 

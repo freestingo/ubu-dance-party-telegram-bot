@@ -1,4 +1,5 @@
 import { Chat } from "./chat";
+import { Entity } from "./entity";
 import { User } from "./user";
 
 export interface Message {
@@ -7,4 +8,5 @@ export interface Message {
   chat: Chat;
   date: number;
   text: string;
+  entities: Entity[];
 }

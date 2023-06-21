@@ -24,14 +24,40 @@ export default {
         .map(userId => `https://api.telegram.org/bot${env.API_KEY}/getChatMember?chat_id=${chatId}&user_id=${userId}`)
         .map(url => fetch(url)
           .then(resp => resp.json())
-          .then(resp => (resp as ChatMemberResponse).result.user)))
+          .then(resp => (resp as ChatMemberResponse).result?.user)))
+      // 'unknown username' will appear for all saved user ids not present in the chat in which the command has been sent (i.e., a private chat with the bot)
       const rymUsers = await Promise.all(rymUserIds.map(userId => env.RYM_USERS
         .get(`${userId}`)
-        .then(profileUrl => ({ username: chatMembers.find(cm => `${cm.id}` === userId)?.username ?? 'unknown username', profileUrl }))))
+        .then(profileUrl => ({ username: chatMembers.find(cm => `${cm?.id}` === userId)?.username ?? 'unknown username', profileUrl }))))
       const renderedRymUsersList = rymUsers
-        .map(rymUser => `${rymUser.username}\n${rymUser.profileUrl}`)
-        .join('\n\n')
-      const text = `Lista profili RYM salvati:\n${renderedRymUsersList}`
+        .map(rymUser => `${rymUser.username} - ${rymUser.profileUrl}`)
+        .join('\n')
+      const inlineKeyboard = [ [ { text: '➕', switch_inline_query_current_chat: 'insert-profile-url ' } ] ]
+      const replyMarkup = { inline_keyboard: inlineKeyboard }
+      const text = `Lista profili RYM salvati:\n\n${renderedRymUsersList}`
+      const url = `https://api.telegram.org/bot${env.API_KEY}/sendMessage?chat_id=${chatId}&text=${text}&reply_markup=${JSON.stringify(replyMarkup)}`
+      const data = await fetch(url).then(resp => resp.json())
+    }
+
+    async function insertProfileUrl(message: Message) {
+      const chatId = message.chat.id
+      const userId = message.from.id.toString()
+      const username = message.from.username
+      const profileUrl = message.entities
+        .filter(entity => entity.type === 'url')
+        .slice(0, 1) // only take one
+        .map(entity => message.text.substring(entity.offset, entity.offset + entity.length))
+        .filter(profileUrl => profileUrl.startsWith('https://www.rateyourmusic.com/~') || profileUrl.startsWith('https://rateyourmusic.com/~'))
+        .join('')
+      const rymUserIds = await env.RYM_USERS
+        .list()
+        .then(list => list.keys.map(key => key.name))
+      if (profileUrl.length) {
+        await env.RYM_USERS.put(userId, profileUrl);
+      }
+      const text = profileUrl.length
+        ? `Link al profilo RYM per ${username} ${rymUserIds.includes(userId) ? 'aggiornato' : 'inserito'}!`
+        : 'Nessun link a profili RYM trovato.'
       const url = `https://api.telegram.org/bot${env.API_KEY}/sendMessage?chat_id=${chatId}&text=${text}`
       const data = await fetch(url).then(resp => resp.json())
     }
@@ -46,16 +72,22 @@ export default {
 
     if (request.method === "POST") {
       const payload: any = await request.json()
+      console.log('payload:', payload)
       if ('message' in payload) {
         const message: Message = payload.message
         if (message.text === 'rym') {
+          console.log('called RYM command!', 'chatId:', message?.chat?.id, 'userId:', message?.from?.id, 'username:', message?.from?.username, 'message.text:', message?.text);
           await listRymUsers(message)
+        } else if (message.entities && message.entities.find(e => e.type === 'mention') && message.entities.find(e => e.type === 'url') && message.text.includes('insert-profile-url')) {
+          console.log('called insert-profile-url command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
+          await insertProfileUrl(message)
         } else if (message.text === 'echo') {
+          console.log('called echo command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
           await echo(message)
         }
       }
     }
 
-    return new Response(`pippo franco`);
+    return new Response(`franco franchi`);
 	},
 };

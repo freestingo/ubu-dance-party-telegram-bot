@@ -1,5 +1,5 @@
 export interface ScaruffiMention {
-  userId: string;
+  chatId: string;
   synonym: string;
   timestamp: string;
 }

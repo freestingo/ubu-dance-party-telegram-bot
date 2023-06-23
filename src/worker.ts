@@ -64,18 +64,51 @@ export default {
       const data = await fetch(url).then(resp => resp.json())
     }
 
-    async function punishScaruffiMention(message: Message) {
-      // const chatId = message.chat.id
+    async function storeScaruffiMention(message: Message) {
+      const chatId = message.chat.id.toString()
       const userId = message.from.id.toString()
       // const username = message.from.username
       const previousScaruffiMentions = await env.SCARUFFI_MENTIONS.get(userId, { type: 'json' }) as ScaruffiMention[] | null
-      const updatedScaruffiMentions = (previousScaruffiMentions ?? []).concat([{
-        userId,
-        synonym: scaruffiSynonyms.find(s => message.text.includes(s))!,
-        timestamp: new Date().toJSON()
-      }])
+      const scaruffiMentions = message.text
+        .toLowerCase()
+        .split(/\s+/g)
+        .filter(word => scaruffiSynonyms.some(synonym => word.includes(synonym)))
+        .map(mention => ({ synonym: mention, timestamp: new Date().toJSON(), chatId }))
+      const updatedScaruffiMentions = (previousScaruffiMentions ?? []).concat(scaruffiMentions)
       await env.SCARUFFI_MENTIONS.put(userId, JSON.stringify(updatedScaruffiMentions))
-      console.log('updatedScaruffiMentions', updatedScaruffiMentions)
+      const oneDayAgo = new Date(new Date().getTime() - 24 * 60 * 60 * 1000)
+      const latestScaruffiMentions = updatedScaruffiMentions.filter(mention => new Date(mention.timestamp) > oneDayAgo)
+      console.log('scaruffi mentions in the last day:', latestScaruffiMentions)
+    }
+
+    async function sendBlacklist(message: Message) {
+      const chatId = message.chat.id
+      const userId = message.from.id.toString()
+      // const username = message.from.username
+      const userIdsWithScaruffiMentions = await env.SCARUFFI_MENTIONS.list().then(list => list.keys.map(key => key.name))
+      const chatMembers: User[] = await Promise.all(userIdsWithScaruffiMentions
+        .map(userId => `https://api.telegram.org/bot${env.API_KEY}/getChatMember?chat_id=${chatId}&user_id=${userId}`)
+        .map(url => fetch(url)
+          .then(resp => resp.json())
+          .then(resp => (resp as ChatMemberResponse).result?.user)))
+      // 'unknown username' will appear for all saved user ids not present in the chat in which the command has been sent (i.e., a private chat with the bot)
+      const usersWithScaruffiMentions = await Promise.all(userIdsWithScaruffiMentions.map(userId => env.SCARUFFI_MENTIONS
+        .get(userId, { type: 'json' })
+        .then(scaruffiMentions => ({
+          username: chatMembers.find(cm => `${cm?.id}` === userId)?.username ?? 'unknown username',
+          scaruffiMentions: (scaruffiMentions as ScaruffiMention[]).filter(sm => sm.chatId === chatId.toString())
+        }))))
+      const chatUsersWithScaruffiMentions = usersWithScaruffiMentions.filter(u => u.username !== 'unknown username' || !!u.scaruffiMentions.length)
+      const totalScaruffiMentions = chatUsersWithScaruffiMentions.flatMap(u => u.scaruffiMentions).length
+      const [worstOffender] = [...chatUsersWithScaruffiMentions].sort((a, b) => b.scaruffiMentions.length - a.scaruffiMentions.length)
+      console.log('chat users with scaruffi mentions:', chatUsersWithScaruffiMentions);
+      console.log('worst offender:', worstOffender);
+      console.log('total scaruffi mentions:', totalScaruffiMentions);
+      const text = worstOffender
+        ? `In questa chat, scaruffi è stato menzionato ${totalScaruffiMentions} volte finora; la persona più affezionata a lui è ${worstOffender.username} (lo ha nominato ben ${worstOffender.scaruffiMentions.length} volte).`
+        : `In questa chat, scaruffi non è ancora stato menzionato. Si augura di mantenere questo clima di pace ancora per lungo.`
+      const url = `https://api.telegram.org/bot${env.API_KEY}/sendMessage?chat_id=${chatId}&text=${text}`
+      const data = await fetch(url).then(resp => resp.json())
     }
 
     async function echo(message: Message) {
@@ -97,9 +130,12 @@ export default {
         } else if (message.entities && message.entities.find(e => e.type === 'mention') && message.entities.find(e => e.type === 'url') && message.text.includes('insert-profile-url')) {
           console.log('called insert-profile-url command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
           await insertProfileUrl(message)
-        } else if (message.text && scaruffiSynonyms.some(s => message.text.includes(s))) {
-          console.log('called punishScaruffiMention command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
-          await punishScaruffiMention(message)
+        } else if (message.text && scaruffiSynonyms.some(s => message.text.toLowerCase().includes(s))) {
+          console.log('called storeScaruffiMention command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
+          await storeScaruffiMention(message)
+        } else if (message.text && message.text.toLowerCase() === 'blacklist') {
+          console.log('called blacklist command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
+          await sendBlacklist(message)
         } else if (message.text === 'echo') {
           console.log('called echo command!', 'chatId:', message.chat.id, 'userId:', message.from.id, 'username:', message.from.username, 'message.text:', message.text);
           await echo(message)
